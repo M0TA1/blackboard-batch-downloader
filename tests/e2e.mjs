@@ -117,7 +117,7 @@ try {
   await popup.setViewportSize({ width: 460, height: 600 });
   await popup.screenshot({ path: screenshot, fullPage: true });
 
-  await popup.locator('#download-button').click();
+  await popup.locator('#browser-download-button').click();
   await popup.waitForFunction(() => document.getElementById('batch-summary').textContent.includes('3'));
   await popup.close();
   await new Promise((resolve, reject) => {
@@ -150,7 +150,7 @@ try {
   assert.equal(await restored.locator('#selected-count').textContent(), '3');
   await restored.locator('#select-visible').click();
   assert.equal(await restored.locator('#selected-count').textContent(), '5');
-  await restored.locator('#download-button').click();
+  await restored.locator('#browser-download-button').click();
   await restored.locator('#stop-button').waitFor({ state: 'visible' });
   await restored.locator('#stop-button').click();
   await restored.waitForFunction(() => document.getElementById('batch-summary').textContent.includes('已取消'));
@@ -175,7 +175,7 @@ try {
   await assignment.setViewportSize({ width: 460, height: 600 });
   const otherScreenshot = join(tmpdir(), 'blackboard-extension-other.png');
   await assignment.screenshot({ path: otherScreenshot, fullPage: true });
-  await assignment.locator('#download-button').click();
+  await assignment.locator('#browser-download-button').click();
   await assignment.waitForFunction(() => document.getElementById('batch-summary').textContent.includes('已完成 3/3'));
   const otherState = await worker.evaluate(async () => ({ batch: (await chrome.storage.session.get('batch')).batch, records: await chrome.downloads.search({}) }));
   assert.deepEqual(otherState.batch.jobs.map(job => job.file.extension), ['wav', 'txt', 'txt']);

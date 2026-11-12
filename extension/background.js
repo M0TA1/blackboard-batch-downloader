@@ -1,15 +1,38 @@
 import { DownloadQueue } from './queue.js';
+import { FolderSession, isActiveBatch } from './folder-session.js';
 
 const isWebPage = url => /^https?:\/\//i.test(url || '');
 
-export function createMessageHandler(api, queue) {
-  return async (message, sender) => {
+export function createMessageHandler(api, queue, folder = new FolderSession(api)) {
+  let serial = Promise.resolve();
+  const enqueue = action => {
+    const result = serial.then(action);
+    serial = result.catch(() => {});
+    return result;
+  };
+  const latestBatch = async () => {
+    const native = queue.snapshot();
+    const current = await folder.current();
+    return current && (!native || current.createdAt >= native.createdAt) ? current : native;
+  };
+  const selectedFiles = async message => {
+    const { scan } = await api.storage.session.get('scan');
+    if (!scan) throw new Error('请先扫描当前页面。');
+    const tab = await api.tabs.get(scan.sourceTabId);
+    if (tab.url !== scan.pageUrl) throw new Error('原页面已切换，请重新扫描后选择文件。');
+    if (!Array.isArray(message.fileIds) || !message.fileIds.length || message.fileIds.some(id => typeof id !== 'string')) throw new Error('请选择要下载的文件。');
+    const files = new Map(scan.files.map(file => [file.id, file]));
+    const selected = [...new Set(message.fileIds)].map(id => files.get(id));
+    if (selected.some(file => !file)) throw new Error('所选文件已不在扫描结果中，请重新扫描。');
+    return { scan, selected };
+  };
+  const process = async (message, sender) => {
     try {
       if (sender?.id !== api.runtime.id || !sender.url?.startsWith(api.runtime.getURL(''))) throw new Error('仅允许插件界面执行此操作。');
       switch (message?.type) {
         case 'GET_STATE': {
           const { scan = null } = await api.storage.session.get('scan');
-          return { ok: true, scan, batch: queue.snapshot() };
+          return { ok: true, scan, batch: await latestBatch() };
         }
         case 'SCAN_PAGE': {
           if (!Number.isInteger(message.tabId) || message.tabId < 0) throw new Error('无法确定当前标签页。');
@@ -23,26 +46,36 @@ export function createMessageHandler(api, queue) {
           const after = await api.tabs.get(tab.id);
           if (after.url !== tab.url) throw new Error('扫描时页面已切换，请重新扫描。');
           await api.storage.session.set({ scan });
-          return { ok: true, scan, batch: queue.snapshot() };
+          return { ok: true, scan, batch: await latestBatch() };
         }
         case 'START_DOWNLOADS': {
-          const { scan } = await api.storage.session.get('scan');
-          if (!scan) throw new Error('请先扫描当前页面。');
-          const tab = await api.tabs.get(scan.sourceTabId);
-          if (tab.url !== scan.pageUrl) throw new Error('原页面已切换，请重新扫描后选择文件。');
-          if (!Array.isArray(message.fileIds) || !message.fileIds.length || message.fileIds.some(id => typeof id !== 'string')) throw new Error('请选择要下载的文件。');
-          const files = new Map(scan.files.map(file => [file.id, file]));
-          const selected = [...new Set(message.fileIds)].map(id => files.get(id));
-          if (selected.some(file => !file)) throw new Error('所选文件已不在扫描结果中，请重新扫描。');
-          return { ok: true, batch: await queue.start(selected) };
+          if (isActiveBatch(await folder.current())) throw new Error('当前文件夹下载尚未结束，请先完成或停止该批次。');
+          const { selected } = await selectedFiles(message);
+          const batch = await queue.start(selected);
+          await folder.clear();
+          return { ok: true, batch };
         }
-        case 'STOP_DOWNLOADS': return { ok: true, batch: await queue.stop() };
+        case 'PREPARE_FOLDER_DOWNLOAD': {
+          if (isActiveBatch(queue.snapshot())) throw new Error('当前浏览器下载尚未结束，请先等待完成。');
+          const { scan, selected } = await selectedFiles(message);
+          return { ok: true, ...await folder.prepare(selected, scan) };
+        }
+        case 'GET_FOLDER_PLAN': return { ok: true, ...await folder.get(message.planId, sender) };
+        case 'FOLDER_PROGRESS': return { ok: true, batch: await folder.update(message, sender) };
+        case 'STOP_DOWNLOADS': {
+          const batch = await folder.current();
+          return { ok: true, batch: isActiveBatch(batch) ? await folder.stop() : await queue.stop() || batch };
+        }
         default: throw new Error('不支持此操作。');
       }
     } catch (error) {
       return { ok: false, error: error.message || '操作失败，请刷新页面后重试。' };
     }
   };
+  const handle = (message, sender) => enqueue(() => process(message, sender));
+  handle.closeFolderTab = tabId => enqueue(() => folder.closeTab(tabId));
+  handle.folderTabLoading = tabId => enqueue(() => folder.navigateTab(tabId));
+  return handle;
 }
 
 export function installBackground(api) {
@@ -63,6 +96,14 @@ export function installBackground(api) {
   };
   api.downloads.onChanged.addListener(update);
   api.downloads.onErased.addListener(id => update({ id }));
+  api.tabs.onRemoved?.addListener(tabId => {
+    ready.then(() => handle.closeFolderTab(tabId)).catch(error => console.error('下载页关闭状态更新失败', error));
+  });
+  api.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading') {
+      ready.then(() => handle.folderTabLoading(tabId)).catch(error => console.error('下载页导航状态更新失败', error));
+    }
+  });
   return { queue, ready };
 }
 

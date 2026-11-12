@@ -7,6 +7,7 @@ const ui = {
   selectVisible: $('select-visible'), clearVisible: $('clear-visible'), empty: $('empty-state'),
   emptyTitle: $('empty-title'), emptyDescription: $('empty-description'), emptySymbol: $('empty-symbol'),
   selectedCount: $('selected-count'), hiddenSelection: $('hidden-selection'), download: $('download-button'),
+  browserDownload: $('browser-download-button'),
   batchSection: $('batch-section'), batchTitle: $('batch-title'), batchSummary: $('batch-summary'),
   batchDetail: $('batch-detail'), batchErrors: $('batch-errors'), progress: $('batch-progress'),
   progressFill: $('progress-fill'), stop: $('stop-button'),
@@ -66,7 +67,8 @@ function renderControls() {
   ui.hiddenSelection.hidden = hiddenCount === 0;
   ui.hiddenSelection.textContent = `包含 ${hiddenCount} 个筛选外的文件`;
   ui.download.disabled = !scanValid || scanning || starting || active || selected.size === 0;
-  ui.download.textContent = starting ? '正在创建队列…' : active ? '下载进行中' : `↓  下载所选${selected.size ? ` (${selected.size})` : ''}`;
+  ui.browserDownload.disabled = ui.download.disabled;
+  ui.download.textContent = starting ? '正在准备下载…' : active ? '下载进行中' : `选择文件夹下载${selected.size ? ` (${selected.size})` : ''}`;
   ui.scanButton.disabled = scanning || starting;
   ui.scanButton.textContent = scanning ? '扫描中…' : '重新扫描';
   ui.search.disabled = !scanValid;
@@ -176,11 +178,15 @@ function renderBatch() {
   if (counts.cancelled) summary.push(`已取消 ${counts.cancelled}`);
   const summaryText = summary.join(' · ');
   if (ui.batchSummary.textContent !== summaryText) ui.batchSummary.textContent = summaryText;
-  ui.batchDetail.textContent = batch.stopped && active
-    ? '已停止等待项。已经开始的下载会继续，请在浏览器下载列表查看。'
-    : active ? '以浏览器报告的状态为准。已创建下载任务不代表文件已完成。'
-    : counts.interrupted ? '请查看失败原因；若需要登录，请重新登录课程页面后重试。'
-    : '可在浏览器下载列表中查看文件。';
+  ui.batchDetail.textContent = batch.mode === 'folder'
+    ? batch.stopped && active ? '已停止等待项。已经开始的文件会继续保存，请保持下载页打开。'
+      : active ? '请保持新打开的下载页，选择文件夹后整批保存。'
+      : counts.interrupted ? '请到下载页查看失败原因，重新登录后可再发起下载。'
+      : `文件已保存到${batch.folderName ? `文件夹“${batch.folderName}”` : '所选文件夹'}。`
+    : batch.stopped && active ? '已停止等待项。已经开始的下载会继续，请在浏览器下载列表查看。'
+      : active ? '以浏览器报告的状态为准。已创建下载任务不代表文件已完成。'
+      : counts.interrupted ? '请查看失败原因；若需要登录，请重新登录课程页面后重试。'
+      : '可在浏览器下载列表中查看文件。';
   ui.stop.hidden = !active;
   ui.stop.disabled = stopping || counts.queued === 0;
   ui.stop.textContent = stopping ? '正在停止…' : '停止等待项';
@@ -290,14 +296,16 @@ function chooseVisible(checked) {
 ui.selectVisible.addEventListener('click', () => chooseVisible(true));
 ui.clearVisible.addEventListener('click', () => chooseVisible(false));
 ui.scanButton.addEventListener('click', scanCurrentPage);
-ui.download.addEventListener('click', async () => {
+async function startSelectedDownloads(mode) {
   if (ui.download.disabled || !scanValid) return;
   starting = true;
   errorMessage = '';
   renderNotice();
   renderControls();
   try {
-    batch = (await request({ type: 'START_DOWNLOADS', fileIds: [...selected] })).batch;
+    const result = await request({ type: mode === 'folder' ? 'PREPARE_FOLDER_DOWNLOAD' : 'START_DOWNLOADS', fileIds: [...selected] });
+    batch = result.batch ?? batch;
+    if (mode === 'folder') window.close();
   } catch (error) {
     errorMessage = error.message || '无法启动下载，请重试。';
   } finally {
@@ -305,7 +313,9 @@ ui.download.addEventListener('click', async () => {
     renderNotice();
     renderBatch();
   }
-});
+}
+ui.download.addEventListener('click', () => startSelectedDownloads('folder'));
+ui.browserDownload.addEventListener('click', () => startSelectedDownloads('browser'));
 ui.stop.addEventListener('click', async () => {
   if (ui.stop.disabled) return;
   stopping = true;

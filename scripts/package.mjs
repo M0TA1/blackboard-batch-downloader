@@ -7,7 +7,7 @@ const root = resolve(import.meta.dirname, '..');
 const extension = join(root, 'extension');
 const manifest = JSON.parse(await readFile(join(extension, 'manifest.json'), 'utf8'));
 if (manifest.manifest_version !== 3 || manifest.host_permissions?.length) throw new Error('Unexpected manifest permissions.');
-for (const file of [manifest.background.service_worker, manifest.action.default_popup, 'popup.js', 'popup.css', 'file-types.js', 'scanner.js', 'selection.js', 'queue.js']) {
+for (const file of [manifest.background.service_worker, manifest.action.default_popup, 'popup.js', 'popup.css', 'file-types.js', 'scanner.js', 'selection.js', 'queue.js', 'folder-session.js', 'directory-writer.js', 'downloader.html', 'downloader.js', 'downloader.css']) {
   if (file.includes('..') || resolve(extension, file) !== join(extension, file)) throw new Error('Invalid package path.');
   await access(join(extension, file));
 }

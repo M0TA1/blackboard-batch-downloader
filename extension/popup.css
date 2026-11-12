@@ -80,5 +80,8 @@ footer { flex: none; margin-top: 18px; border-top: 1px solid #dae4e9; padding: 1
 .button.primary span { font-size: 20px; line-height: 1; font-weight: 400; }
 .button.primary:hover:enabled { background: #086853; }
 .button.primary:disabled { background: #c3d1d6; opacity: 1; color: #fff; }
+.browser-download-button { display: block; border: 0; padding: 5px 8px; margin: 8px 0 0 auto; background: transparent; color: #577080; font-size: 11px; }
+.browser-download-button:hover:enabled { text-decoration: underline; }
 .footer-note { text-align: center; color: #94a0a9; font-size: 9px; margin: 12px 0 0; }
+.footer-note.native-note { margin-top: 5px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
