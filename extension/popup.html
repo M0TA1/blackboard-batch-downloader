@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blackboard 批量下载</title>
+  <link rel="stylesheet" href="popup.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <span class="brand-mark" aria-hidden="true">Bb<span>↓</span></span>
+    <div class="brand-copy"><h1>课程文件下载</h1><p>BLACKBOARD · 当前页面</p></div>
+    <span class="local-badge">本地运行</span>
+  </header>
+  <main>
+    <section class="page-section" aria-labelledby="page-title">
+      <div class="section-eyebrow">当前课程页面</div>
+      <div class="page-heading">
+        <h2 id="page-title">正在读取页面…</h2>
+        <button id="scan-button" class="button secondary compact" type="button">重新扫描</button>
+      </div>
+      <p class="page-hint">先展开需要的内容，再扫描已加载的附件。</p>
+    </section>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="files-section" aria-label="可下载文件">
+      <label class="search-box" for="search">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg>
+        <input id="search" type="search" placeholder="搜索文件名…" autocomplete="off" aria-label="搜索文件名">
+        <span id="total-count" class="count-badge">0</span>
+      </label>
+      <div class="type-filters" role="group" aria-label="按文件类型筛选">
+        <button type="button" data-type="all" aria-pressed="true">全部</button>
+        <button type="button" data-type="pdf" aria-pressed="false">PDF</button>
+        <button type="button" data-type="presentation" aria-pressed="false">演示文稿</button>
+        <button type="button" data-type="document" aria-pressed="false">文档</button>
+        <button type="button" data-type="spreadsheet" aria-pressed="false">表格</button>
+        <button type="button" data-type="other" aria-pressed="false">其他</button>
+      </div>
+      <div class="selection-bar">
+        <span id="visible-count">正在扫描…</span>
+        <div><button id="select-visible" class="text-button" type="button">全选所见</button><span class="divider" aria-hidden="true">/</span><button id="clear-visible" class="text-button muted" type="button">取消所见</button></div>
+      </div>
+      <div id="file-list" class="file-list" aria-label="文件列表"></div>
+      <div id="empty-state" class="empty-state" role="status">
+        <span id="empty-symbol" class="empty-symbol" aria-hidden="true">↓</span>
+        <strong id="empty-title">正在扫描页面</strong>
+        <p id="empty-description">查找页面中的文件链接和内嵌附件…</p>
+      </div>
+    </section>
+    <section id="batch-section" class="batch-section" aria-labelledby="batch-title" hidden>
+      <div class="batch-heading"><h2 id="batch-title">下载进度</h2><button id="stop-button" class="text-button danger" type="button">停止等待项</button></div>
+      <div class="progress-track" role="progressbar" id="batch-progress" aria-label="下载队列进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-fill"></div></div>
+      <p id="batch-summary" class="batch-summary" role="status" aria-live="polite"></p>
+      <p id="batch-detail" class="batch-detail"></p>
+      <ul id="batch-errors" class="batch-errors" hidden></ul>
+    </section>
+  </main>
+  <footer>
+    <div class="download-row"><div class="selected-summary"><strong id="selected-count">0</strong><span> 个文件已选</span><small id="hidden-selection" hidden></small></div><button id="download-button" class="button primary" type="button" disabled><span aria-hidden="true">↓</span> 下载所选</button></div>
+    <p class="footer-note">保存至下载目录 / Blackboard · 关闭弹窗后仍会继续</p>
+  </footer>
+</body>
+</html>
