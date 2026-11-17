@@ -1,11 +1,12 @@
 {
   "name": "blackboard-batch-downloader",
-  "version": "0.2.1",
+  "version": "0.5.2",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:e2e": "node tests/e2e.mjs",
+    "test:e2e": "node tests/sidepanel-e2e.mjs",
+    "test:sidepanel": "node tests/sidepanel-e2e.mjs",
     "package": "node scripts/package.mjs"
   },
   "engines": {

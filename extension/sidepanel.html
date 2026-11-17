@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blackboard 文件下载</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <script type="module" src="sidepanel.js"></script>
+</head>
+<body>
+  <header class="masthead"><span class="brand-mark" aria-hidden="true"><span class="brand-initials">Bb</span><svg class="brand-arrow" width="10" height="17" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v15m-4-4 4 4 4-4"></path></svg></span><div><h1>课程文件下载</h1><p>BLACKBOARD · 当前页面</p></div><span class="local-badge">本地保存</span></header>
+  <main id="main-content">
+    <section class="page-section" aria-labelledby="page-title"><p class="eyebrow">当前课程页面</p><div class="page-heading"><h2 id="page-title">正在读取页面…</h2><button id="scan-button" class="button secondary compact" type="button" disabled>重新扫描</button></div><p class="page-hint">在课程页面展开需要的内容，再扫描附件。</p></section>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <section class="files-section" aria-label="选择课程文件">
+      <label class="search-box" for="search"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 5 5"></path></svg><input id="search" type="search" placeholder="搜索文件名…" autocomplete="off" aria-label="搜索文件名"><span id="total-count" class="count-badge">0</span></label>
+      <div class="type-filters" role="group" aria-label="按文件类型筛选"><button type="button" data-type="all" aria-pressed="true">全部</button><button type="button" data-type="pdf" aria-pressed="false">PDF</button><button type="button" data-type="presentation" aria-pressed="false">演示文稿</button><button type="button" data-type="document" aria-pressed="false">文档</button><button type="button" data-type="spreadsheet" aria-pressed="false">表格</button><button type="button" data-type="other" aria-pressed="false">其他</button></div>
+      <div class="selection-bar"><span id="visible-count">正在读取…</span><div><button id="select-visible" class="text-button" type="button">全选所见</button><span class="divider" aria-hidden="true">/</span><button id="clear-visible" class="text-button muted" type="button">取消所见</button></div></div>
+      <div id="file-list" class="file-list" aria-label="可选文件列表"></div>
+      <div id="empty-state" class="empty-state" role="status"><span class="empty-symbol" aria-hidden="true">↓</span><strong id="empty-title">正在读取课程页面</strong><p id="empty-description">查找页面中的附件链接和内嵌文件…</p></div>
+    </section>
+    <section id="batch-section" class="batch-section" aria-labelledby="batch-title" hidden><div class="batch-heading"><h2 id="batch-title">下载进度</h2><button id="stop-button" class="text-button danger" type="button">停止等待项</button></div><p id="batch-owner" class="batch-owner" hidden></p><p id="folder-name" class="folder-name" hidden></p><div id="batch-progress" class="progress-track" role="progressbar" aria-label="批次进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-fill"></div></div><p id="batch-summary" class="batch-summary" role="status" aria-live="polite"></p><ol id="batch-files" class="batch-files" aria-label="逐项下载状态"></ol></section>
+  </main>
+  <footer><div class="download-row"><div class="selected-summary"><strong id="selected-count">0</strong><span> 个文件已选</span><small id="hidden-selection" hidden></small></div><button id="download-button" class="button primary" type="button" disabled>选择文件夹下载</button></div><span id="download-status" class="visually-hidden" role="status" aria-atomic="true"></span><p id="permission-hint" class="permission-hint" hidden></p><p class="footer-note">下载时请保持侧边栏打开</p></footer>
+</body>
+</html>
