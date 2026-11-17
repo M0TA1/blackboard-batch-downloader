@@ -173,6 +173,72 @@ test('a frame access error preserves results from the main document', async () =
   assert.equal(scan?.warnings.length, 1);
 });
 
+test('hidden cross-origin frames do not warn or interfere with main-page attachments', async () => {
+  for (const html of [
+    '<iframe hidden src="https://developer.blackboard.com/fixture-helper"></iframe>',
+    '<iframe style="display:none" src="https://developer.blackboard.com/fixture-helper"></iframe>',
+    '<div style="display:none"><iframe src="https://developer.blackboard.com/fixture-helper"></iframe></div>',
+    '<iframe style="visibility:hidden" src="https://developer.blackboard.com/fixture-helper"></iframe>',
+  ]) {
+    const document = await page(`<a href="/good.pdf">课程.pdf</a>${html}`);
+    const scan = api.scanPage(document);
+    assert.equal(scan.files[0].name, '课程.pdf');
+    assert.deepEqual(Array.from(scan.warnings), [], html);
+  }
+});
+
+test('visible cross-origin frames still warn even on the Blackboard developer host or with aria-hidden', async () => {
+  const document = await page('<iframe aria-hidden="true" src="https://developer.blackboard.com/fixture-content"></iframe>');
+  assert.equal(api.scanPage(document).warnings.length, 1);
+});
+
+test('a directly identified frame attachment needs no inaccessible-preview warning', async () => {
+  const document = await page('<iframe hidden src="https://files.example/lecture.pdf?token=keep"></iframe><iframe src="https://files.example/other.pdf"></iframe>');
+  const scan = api.scanPage(document);
+  assert.equal(scan.files.length, 2);
+  assert.equal(scan.files[0].url, 'https://files.example/lecture.pdf?token=keep');
+  assert.deepEqual(Array.from(scan.warnings), []);
+});
+
+test('hidden same-origin frames remain scanned and their hidden nested helpers do not warn', async () => {
+  const document = await page('<iframe hidden src="/embedded/"></iframe>');
+  const nested = await page('<a href="notes.doc">Notes</a><iframe src="https://other.example/fixture-helper"></iframe>', 'https://school.example/embedded/');
+  Object.defineProperty(document.querySelector('iframe'), 'contentDocument', { value: nested });
+  const scan = api.scanPage(document);
+  assert.equal(scan.files[0].url, 'https://school.example/embedded/notes.doc');
+  assert.deepEqual(Array.from(scan.warnings), []);
+});
+
+test('computed rendering overrides hidden attributes and missing layout data stays conservative', async () => {
+  const document = await page('<iframe hidden src="https://other.example/content"></iframe>');
+  Object.defineProperty(document, 'defaultView', { value: { getComputedStyle: () => ({ display: 'block', visibility: 'visible', width: '300px', height: '150px' }) } });
+  assert.equal(api.scanPage(document).warnings.length, 1, 'CSS may make a hidden-attributed frame visible');
+  const visible = await page('<iframe src="https://other.example/content"></iframe>');
+  assert.equal(api.scanPage(visible).warnings.length, 1, 'unavailable layout APIs must not suppress the warning');
+});
+
+test('computed hidden styles and zero-sized frames suppress warnings', async () => {
+  for (const style of [
+    { display: 'none', visibility: 'visible' },
+    { display: 'block', visibility: 'hidden' },
+    { display: 'block', visibility: 'visible', width: '0px', height: '0px' },
+  ]) {
+    const document = await page('<iframe src="https://other.example/fixture-helper"></iframe>');
+    Object.defineProperty(document, 'defaultView', { value: { getComputedStyle: () => style } });
+    assert.deepEqual(Array.from(api.scanPage(document).warnings), [], JSON.stringify(style));
+  }
+});
+
+test('hidden inaccessible same-origin frames suppress both null-document and exception warnings', async () => {
+  for (const throwing of [false, true]) {
+    const document = await page('<a href="/good.pdf">Good</a><iframe hidden src="/helper"></iframe>');
+    Object.defineProperty(document.querySelector('iframe'), 'contentDocument', { get() { if (throwing) throw new Error('SecurityError'); return null; } });
+    const scan = api.scanPage(document);
+    assert.equal(scan.files.length, 1);
+    assert.deepEqual(Array.from(scan.warnings), []);
+  }
+});
+
 test('empty pages return an empty file list', async () => {
   const scan = api.scanPage?.(await page('<p>No attachments here</p>'));
   assert.deepEqual(Array.from(scan?.files ?? ['missing']), []);

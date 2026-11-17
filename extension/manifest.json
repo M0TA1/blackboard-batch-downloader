@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Blackboard 批量下载",
-  "version": "0.3.0",
+  "version": "0.5.2",
   "description": "扫描当前 Blackboard 页面的文档、表格及音频、文本、压缩包等附件，勾选后批量下载。",
-  "minimum_chrome_version": "114",
-  "permissions": ["activeTab", "scripting", "downloads", "storage"],
+  "minimum_chrome_version": "116",
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html", "default_title": "扫描当前页面的课程文件" },
+  "action": { "default_title": "打开课程文件下载侧边栏" },
+  "side_panel": { "default_path": "sidepanel.html" },
   "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
 }

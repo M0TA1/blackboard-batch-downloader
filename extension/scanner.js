@@ -90,6 +90,29 @@
     return false;
   }
 
+  function visuallyHiddenFrame(element, doc) {
+    const view = doc.defaultView;
+    const computed = typeof view?.getComputedStyle === 'function';
+    let visibility = '';
+    let ownStyle;
+    try {
+      for (let node = element; node?.getAttribute; node = node.parentElement) {
+        const style = computed ? view.getComputedStyle(node) : node.style;
+        if (node === element) ownStyle = style;
+        if (style?.display === 'none' || style?.contentVisibility === 'hidden') return true;
+        if (!visibility && style?.visibility) visibility = style.visibility;
+        // Use actual browser styling when available: CSS can override hidden.
+        if (!computed && node.hasAttribute('hidden') && !style?.display) return true;
+      }
+      if (['hidden', 'collapse'].includes(visibility)) return true;
+      if (computed && parseFloat(ownStyle?.width) === 0 && parseFloat(ownStyle?.height) === 0) return true;
+      return false;
+    } catch {
+      // Missing rendering information must not hide a possible content warning.
+      return false;
+    }
+  }
+
   function scanPage(document) {
     if (!document?.querySelectorAll) throw new TypeError('无法读取当前页面。');
     const files = [];
@@ -97,7 +120,7 @@
     const visited = new Set();
     const pageUrl = text(document.URL) || text(document.baseURI);
 
-    function visit(doc, inheritedUrl, nested = false) {
+    function visit(doc, inheritedUrl, nested = false, hiddenContext = false) {
       if (visited.has(doc)) return;
       visited.add(doc);
       const docUrl = httpUrl(doc.URL, inheritedUrl) || httpUrl(inheritedUrl);
@@ -106,6 +129,7 @@
       const add = candidate => {
         const file = identifyFile({ ...candidate, source }, baseUrl);
         if (file) files.push(file);
+        return file;
       };
       for (const element of doc.querySelectorAll('a[href], area[href], object[data], embed[src], iframe, [data-download-url]')) {
         if (downloadRestricted(element)) continue;
@@ -116,19 +140,21 @@
         const name = metadataName || text(element.getAttribute('title')) || text(element.textContent);
         const mime = element.getAttribute('type') || element.getAttribute('data-mime-type') || element.getAttribute('data-content-type');
         const trustedMetadata = Boolean(original || metadataName || element.hasAttribute('download'));
-        add({ url: rawUrl, name, mime, trustedMetadata });
+        const directFile = add({ url: rawUrl, name, mime, trustedMetadata });
         if (tag !== 'iframe') continue;
         const frameUrl = httpUrl(element.getAttribute('src'), baseUrl);
+        const frameHidden = hiddenContext || visuallyHiddenFrame(element, doc);
+        const needsWarning = !directFile && !frameHidden;
         if (frameUrl && docUrl && frameUrl.origin !== docUrl.origin) {
-          warnings.add(`部分内嵌内容位于其他站点，无法读取：${frameUrl.origin}`);
+          if (needsWarning) warnings.add(`部分内嵌内容位于其他站点，无法读取：${frameUrl.origin}`);
           continue;
         }
         try {
           const child = element.contentDocument;
-          if (child?.querySelectorAll) visit(child, frameUrl?.href || docUrl?.href || baseUrl, true);
-          else warnings.add('部分内嵌内容尚未加载或无法访问，扫描结果可能不完整。');
+          if (child?.querySelectorAll) visit(child, frameUrl?.href || docUrl?.href || baseUrl, true, frameHidden);
+          else if (needsWarning) warnings.add('部分内嵌内容尚未加载或无法访问，扫描结果可能不完整。');
         } catch {
-          warnings.add('部分内嵌内容无法访问，扫描结果可能不完整。');
+          if (needsWarning) warnings.add('部分内嵌内容无法访问，扫描结果可能不完整。');
         }
       }
     }

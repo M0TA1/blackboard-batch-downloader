@@ -1,4 +1,4 @@
-import { safeFilename } from './queue.js';
+import { safeFilename } from './filename.js';
 
 const { officeExtensions } = globalThis.BBFileTypes;
 const encoder = new TextEncoder();
@@ -12,7 +12,7 @@ function numberedName(base, number) {
   return stem.join('') + suffix;
 }
 
-/** Owns one tab-lifetime batch. No directory handles or credentials are persisted. */
+/** Owns one document-lifetime batch. No directory handles or credentials are persisted. */
 export class DirectoryWriter {
   constructor({ fetch = globalThis.fetch, onProgress = async () => {}, concurrency = 3 } = {}) {
     this.fetch = fetch.bind(globalThis);
@@ -78,8 +78,8 @@ export class DirectoryWriter {
     this.nameTail = new Promise(resolve => { release = resolve; });
     await previous;
     try {
-      // safeFilename always returns Blackboard/<basename>; never write a child path.
-      const base = safeFilename(file).slice('Blackboard/'.length);
+      // The selected directory owns all files; never write a child path.
+      const base = safeFilename(file);
       if (!base || /[\\/]/.test(base)) throw new Error('文件名无效。');
       for (let number = 0; ; number++) {
         const name = numberedName(base, number);

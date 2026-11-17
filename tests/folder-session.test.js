@@ -6,84 +6,110 @@ const file = { id: 'pdf', name: '课程.pdf', extension: 'pdf', url: 'https://sc
 const second = { ...file, id: 'txt', name: 'input.txt', extension: 'txt', url: 'https://school.example/input.txt' };
 function setup() {
   const state = {};
+  const contexts = new Set(['panel-a']);
   const api = {
-    runtime: { getURL: path => `chrome-extension://test/${path}` },
+    runtime: { getURL: path => `chrome-extension://test/${path}`, getContexts: async ({ documentIds }) => documentIds.filter(id => contexts.has(id)).map(documentId => ({ documentId })) },
     storage: { session: { get: async key => ({ [key]: structuredClone(state[key]) }), set: async data => Object.assign(state, structuredClone(data)) } },
-    tabs: { create: async () => ({ id: 123 }) },
   };
   const session = new FolderSession(api);
-  const sender = id => ({ tab: { id: 123 }, url: `chrome-extension://test/downloader.html#${id}` });
-  return { session, state, sender };
+  const panel = documentId => ({ documentId, url: 'chrome-extension://test/sidepanel.html' });
+  return { session, state, panel, contexts };
 }
 
-test('folder plan keeps selected signed URLs and belongs to one download tab', async () => {
-  const { session, sender } = setup();
-  const result = await session.prepare([file, second], { sourceTabId: 1, pageUrl: 'https://school.example/course', title: '课程' });
-  assert.equal(result.tabId, 123);
-  const current = await session.get(result.planId, sender(result.planId));
-  assert.equal(current.plan.files[0].url, file.url);
-  assert.equal(current.batch.mode, 'folder');
-  assert.deepEqual(current.batch.jobs.map(job => job.status), ['queued', 'queued']);
-  await assert.rejects(session.get(result.planId, { ...sender(result.planId), tab: { id: 999 } }));
+test('legacy standalone state is discarded so upgrades cannot block panel downloads', async () => {
+  const { session, state, panel } = setup();
+  state.folderPlan = { id: 'legacy', tabId: 123 };
+  state.folderBatch = { id: 'legacy', mode: 'folder', tabId: 123, jobs: [{ id: 'legacy-0', file, status: 'in_progress' }] };
+  assert.equal(await session.current(), null);
+  assert.equal(state.folderBatch, null);
+  assert.equal(state.folderPlan, null);
+  assert.equal((await session.preparePanel([file], {}, panel('panel-a'))).batch.surface, 'panel');
 });
 
-test('progress cannot introduce files or move a completed job backwards', async () => {
-  const { session, sender } = setup();
-  const { planId, batch } = await session.prepare([file], {});
-  await assert.rejects(session.update({ planId, jobs: [{ id: 'invented', status: 'complete' }] }, sender(planId)));
-  await session.update({ planId, jobs: [{ id: batch.jobs[0].id, status: 'in_progress' }], folderName: '课程资料' }, sender(planId));
-  const done = await session.update({ planId, jobs: [{ id: batch.jobs[0].id, status: 'complete', savedName: '课程.pdf' }], folderName: '课程资料' }, sender(planId));
+test('panel plans retain signed URLs and bind progress to their document', async () => {
+  const { session, panel } = setup();
+  const { plan, batch } = await session.preparePanel([file, second], { sourceTabId: 7 }, panel('panel-a'));
+  assert.equal(plan.surface, 'panel');
+  assert.equal(plan.files[0].url, file.url);
+  assert.equal(batch.ownerDocumentId, 'panel-a');
+  assert.equal(batch.tabId, undefined);
+  await assert.rejects(session.update({ planId: plan.id, jobs: batch.jobs }, panel('panel-b')));
+  assert.deepEqual((await session.current()).jobs.map(job => job.status), ['queued', 'queued']);
+});
+
+test('progress rejects unknown jobs, invalid states and backwards or changed terminal states', async () => {
+  const { session, panel } = setup();
+  const { plan, batch } = await session.preparePanel([file], {}, panel('panel-a'));
+  const update = status => session.update({ planId: plan.id, jobs: [{ id: batch.jobs[0].id, status }] }, panel('panel-a'));
+  await assert.rejects(session.update({ planId: plan.id, jobs: [{ id: 'invented', status: 'complete' }] }, panel('panel-a')));
+  await assert.rejects(update('toString'));
+  await update('in_progress');
+  await assert.rejects(update('queued'));
+  const done = await session.update({ planId: plan.id, jobs: [{ id: batch.jobs[0].id, status: 'complete', savedName: '课程.pdf' }], folderName: '课程资料' }, panel('panel-a'));
   assert.equal(done.jobs[0].file.url, file.url);
-  assert.equal(done.jobs[0].status, 'complete');
-  await assert.rejects(session.update({ planId, jobs: [{ id: batch.jobs[0].id, status: 'in_progress' }] }, sender(planId)));
+  assert.equal(done.jobs[0].savedName, '课程.pdf');
+  await assert.rejects(update('in_progress'));
+  await assert.rejects(update('interrupted'));
 });
 
-test('stop cancels waiting jobs and preserves an already writing job', async () => {
-  const { session, sender } = setup();
-  const { planId, batch } = await session.prepare([file, second], {});
-  await session.update({ planId, jobs: batch.jobs.map((job, index) => ({ id: job.id, status: index ? 'queued' : 'in_progress' })) }, sender(planId));
+test('stop preserves active writes and absorbs older queued snapshots for cancelled jobs', async () => {
+  const { session, panel } = setup();
+  const { plan, batch } = await session.preparePanel([file, second], {}, panel('panel-a'));
+  const updates = first => batch.jobs.map((job, index) => ({ id: job.id, status: index ? 'queued' : first }));
+  await session.update({ planId: plan.id, jobs: updates('in_progress') }, panel('panel-a'));
   const stopped = await session.stop();
   assert.equal(stopped.stopped, true);
   assert.deepEqual(stopped.jobs.map(job => job.status), ['in_progress', 'cancelled']);
-  const updated = await session.update({ planId, jobs: batch.jobs.map((job, index) => ({ id: job.id, status: index ? 'queued' : 'complete' })) }, sender(planId));
+  const updated = await session.update({ planId: plan.id, jobs: updates('complete') }, panel('panel-a'));
   assert.deepEqual(updated.jobs.map(job => job.status), ['complete', 'cancelled']);
 });
 
-test('closing the owning tab marks unfinished files interrupted or cancelled', async () => {
-  const { session, sender } = setup();
-  const { planId, batch } = await session.prepare([file, second], {});
-  await session.update({ planId, jobs: batch.jobs.map((job, index) => ({ id: job.id, status: index ? 'queued' : 'in_progress' })) }, sender(planId));
-  await session.closeTab(999);
-  assert.equal((await session.current()).stopped, false);
-  await session.closeTab(123);
+test('active panel batches cannot be replaced and invalid addresses cannot create a plan', async () => {
+  const { session, panel } = setup();
+  await assert.rejects(session.preparePanel([{ ...file, url: 'javascript:alert(1)' }], {}, panel('panel-a')));
+  await session.preparePanel([file], {}, panel('panel-a'));
+  await assert.rejects(session.preparePanel([second], {}, panel('panel-a')));
+});
+
+test('a missing panel document interrupts active jobs, cancels pending jobs and releases the next batch', async () => {
+  const { session, panel, contexts } = setup();
+  const { plan, batch } = await session.preparePanel([file, second], {}, panel('panel-a'));
+  await session.update({ planId: plan.id, jobs: batch.jobs.map((job, index) => ({ id: job.id, status: index ? 'queued' : 'in_progress' })) }, panel('panel-a'));
+  contexts.delete('panel-a');
+  await session.reconcilePanel();
   assert.deepEqual((await session.current()).jobs.map(job => job.status), ['interrupted', 'cancelled']);
+  contexts.add('panel-b');
+  assert.equal((await session.preparePanel([second], {}, panel('panel-b'))).batch.ownerDocumentId, 'panel-b');
 });
 
-test('a refreshed download tab cannot leave lost file handles running forever', async () => {
-  const { session, sender } = setup();
-  const { planId, batch } = await session.prepare([file], {});
-  await session.get(planId, sender(planId));
-  await session.update({ planId, jobs: [{ id: batch.jobs[0].id, status: 'in_progress' }] }, sender(planId));
-  const reloaded = await session.get(planId, sender(planId));
-  assert.equal(reloaded.batch.stopped, true);
-  assert.equal(reloaded.batch.jobs[0].status, 'interrupted');
-});
-
-test('an active folder batch cannot be replaced or populated with invalid URLs', async () => {
-  const { session } = setup();
-  await assert.rejects(session.prepare([{ ...file, url: 'javascript:alert(1)' }], {}));
-  await session.prepare([file], {});
-  await assert.rejects(session.prepare([second], {}));
-});
-
-test('navigation cancels a claimed download page without mistaking its first load for leaving', async () => {
-  const { session, sender } = setup();
-  const { planId, batch } = await session.prepare([file, second], {});
-  await session.navigateTab(123);
+test('only the owning panel can explicitly end its batch', async () => {
+  const { session, panel } = setup();
+  const { plan } = await session.preparePanel([file], {}, panel('panel-a'));
+  await assert.rejects(session.endPanel(plan.id, panel('panel-b')));
   assert.equal((await session.current()).stopped, false);
-  await session.get(planId, sender(planId));
-  await session.update({ planId, jobs: batch.jobs.map((job, index) => ({ id: job.id, status: index ? 'queued' : 'in_progress' })) }, sender(planId));
-  await session.navigateTab(123);
-  assert.deepEqual((await session.current()).jobs.map(job => job.status), ['interrupted', 'cancelled']);
-  assert.equal((await session.current()).stopped, true);
+  await session.endPanel(plan.id, panel('panel-a'));
+  assert.equal((await session.current()).jobs[0].status, 'cancelled');
+});
+
+test('native panel senders without documentId resolve only through one live SIDE_PANEL instance URL', async () => {
+  const base = 'chrome-extension://test/sidepanel.html';
+  const panelUrl = `${base}#11111111-1111-4111-8111-111111111111`;
+  const context = { contextType: 'SIDE_PANEL', documentUrl: panelUrl, documentId: 'actual-browser-id' };
+  let contexts = [context];
+  const session = new FolderSession({ runtime: { getURL: () => base, getContexts: async filter => {
+    assert.deepEqual(filter, { contextTypes: ['SIDE_PANEL'], documentUrls: [panelUrl] });
+    return contexts;
+  } } });
+  const sender = { id: 'test', url: base };
+  assert.equal((await session.resolvePanelSender(sender, panelUrl)).documentId, 'actual-browser-id');
+  for (const invalid of [base, `${base}?other=1#11111111-1111-4111-8111-111111111111`, 'https://evil.example/sidepanel.html#11111111-1111-4111-8111-111111111111']) {
+    await assert.rejects(session.resolvePanelSender(sender, invalid));
+  }
+  await assert.rejects(session.resolvePanelSender({ ...sender, documentId: 'forged' }, panelUrl));
+  contexts = [context, { ...context, documentId: 'ambiguous' }];
+  await assert.rejects(session.resolvePanelSender(sender, panelUrl));
+  contexts = [{ ...context, contextType: 'TAB' }];
+  await assert.rejects(session.resolvePanelSender(sender, panelUrl));
+  contexts = [];
+  await assert.rejects(session.resolvePanelSender(sender, panelUrl));
 });
